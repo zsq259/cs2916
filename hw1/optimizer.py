@@ -38,23 +38,47 @@ class AdamW(Optimizer):
                 if grad.is_sparse:
                     raise RuntimeError("Adam does not support sparse gradients, please consider SparseAdam instead")
 
-                raise NotImplementedError()
+                # raise NotImplementedError()
 
                 # State should be stored in this dictionary
                 state = self.state[p]
 
                 # Access hyperparameters from the `group` dictionary
                 alpha = group["lr"]
+                beta1 = group["betas"][0]
+                beta2 = group["betas"][1]
+                eps = group["eps"]                                        
+
+                # State initialization
+                if len(state) == 0:
+                    state['step'] = 0
+                    # First moment vector
+                    state['exp_avg'] = torch.zeros_like(p.data)
+                    # Second moment vector
+                    state['exp_avg_sq'] = torch.zeros_like(p.data)
+
+                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq'] #m1, m2
+                state['step'] += 1
 
                 # Update first and second moments of the gradients
+                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
 
                 # Bias correction
                 # Please note that we are using the "efficient version" given in
                 # https://arxiv.org/abs/1412.6980
 
-                # Update parameters
+                corrected_exp_avg = exp_avg / (1 - beta1 ** state['step'])                
+                corrected_exp_avg_sq = exp_avg_sq / (1 - beta2 ** state['step'])
 
-                # Add weight decay after the main gradient-based updates.
-                # Please note that the learning rate should be incorporated into this update.
+                # Update parameters
+                denom = corrected_exp_avg_sq.sqrt().add_(eps)
+                p.data.addcdiv_(-alpha, corrected_exp_avg, denom)
+
+                # Add weight decay after the main gradient-based updates                
+                p.data.add_(-alpha * group['weight_decay'], p.data)
+                state['exp_avg'] = exp_avg
+                state['exp_avg_sq'] = exp_avg_sq
+
 
         return loss
